@@ -9,24 +9,25 @@ import {PoolKey} from "v4-core/src/types/PoolKey.sol";
 import {PoolId, PoolIdLibrary} from "v4-core/src/types/PoolId.sol";
 import {BalanceDelta, BalanceDeltaLibrary} from "v4-core/src/types/BalanceDelta.sol";
 import {BeforeSwapDelta, BeforeSwapDeltaLibrary} from "v4-core/src/types/BeforeSwapDelta.sol";
-import {console2} from "forge-std/Test.sol";
 
 contract Counter is BaseHook {
     using PoolIdLibrary for PoolKey;
     using BalanceDeltaLibrary for BalanceDelta;
 
-    // NOTE: ---------------------------------------------------------
-    // state variables should typically be unique to a pool
-    // a single hook contract should be able to service multiple pools
-    // ---------------------------------------------------------------
+    address chainlinkRelayer;
 
-    mapping(PoolId => uint256 count) public beforeSwapCount;
-    mapping(PoolId => uint256 count) public afterSwapCount;
+    struct ChainlinkData {
+        address receiver;
+        uint256 amount;
+        bytes32 callData;
+    }
 
-    mapping(PoolId => uint256 count) public beforeAddLiquidityCount;
-    mapping(PoolId => uint256 count) public beforeRemoveLiquidityCount;
-
-    constructor(IPoolManager _poolManager) BaseHook(_poolManager) {}
+    constructor(
+        IPoolManager _poolManager,
+        address _chainlinkRelayer
+    ) BaseHook(_poolManager) {
+        chainlinkRelayer = _chainlinkRelayer;
+    }
 
     function getHookPermissions()
         public
@@ -38,9 +39,9 @@ contract Counter is BaseHook {
             Hooks.Permissions({
                 beforeInitialize: false,
                 afterInitialize: false,
-                beforeAddLiquidity: true,
+                beforeAddLiquidity: false,
                 afterAddLiquidity: false,
-                beforeRemoveLiquidity: true,
+                beforeRemoveLiquidity: false,
                 afterRemoveLiquidity: false,
                 beforeSwap: true,
                 afterSwap: true,
@@ -63,7 +64,6 @@ contract Counter is BaseHook {
         IPoolManager.SwapParams calldata,
         bytes calldata
     ) external override returns (bytes4, BeforeSwapDelta, uint24) {
-        beforeSwapCount[key.toId()]++;
         return (
             BaseHook.beforeSwap.selector,
             BeforeSwapDeltaLibrary.ZERO_DELTA,
@@ -75,32 +75,12 @@ contract Counter is BaseHook {
         address,
         PoolKey calldata key,
         IPoolManager.SwapParams calldata,
-        BalanceDelta balance,
-        bytes calldata
+        BalanceDelta,
+        bytes calldata callData
     ) external override returns (bytes4, int128) {
-        console2.log("BalanceDelta 0", balance.amount0());
-        console2.log("BalanceDelta 1", balance.amount1());
-        afterSwapCount[key.toId()]++;
+        if (callData.length > 0) {
+            ChainlinkData memory data = abi.decode(callData, (ChainlinkData));
+        }
         return (BaseHook.afterSwap.selector, 0);
-    }
-
-    function beforeAddLiquidity(
-        address,
-        PoolKey calldata key,
-        IPoolManager.ModifyLiquidityParams calldata,
-        bytes calldata
-    ) external override returns (bytes4) {
-        beforeAddLiquidityCount[key.toId()]++;
-        return BaseHook.beforeAddLiquidity.selector;
-    }
-
-    function beforeRemoveLiquidity(
-        address,
-        PoolKey calldata key,
-        IPoolManager.ModifyLiquidityParams calldata,
-        bytes calldata
-    ) external override returns (bytes4) {
-        beforeRemoveLiquidityCount[key.toId()]++;
-        return BaseHook.beforeRemoveLiquidity.selector;
     }
 }
